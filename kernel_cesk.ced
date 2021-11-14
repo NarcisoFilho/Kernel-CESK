@@ -337,10 +337,10 @@ _turnon_clock:
 
 		
 		PAUSAR_CLK:
-				and 	#hFFFD, CLKST		; Aplica máscara para desligar bit 1 { SA }
+				and 	#hFFFD, CLKST(R4)		; Aplica máscara para desligar bit 1 { SA }
 				jmp	END_TURNONCLK
 		REATIVAR_CLK:
-				or 	#2, CLKST		; Aplica máscara para ligar bit 1 { SA }
+				or 	#2, CLKST(R4)		; Aplica máscara para ligar bit 1 { SA }
 		
 		END_TURNONCLK:
 				mov 	#0, R0
@@ -363,12 +363,13 @@ _clr_clock:
 		clr	CLKTM_DS(R5)	
 		
 		; Zerar Minutos
-		asl	R5			; R5 *= 2
-		clr 	CLKTM(R5)		; Zera Minutos   <=>   CLKTM[ R5 ][ 0 ] = 0   <=>  *(CLKTM + 2*R5 + 0 )   <=>   *(CLKTM + QTD_LINHAS*CLK_ATUAL + CAMPO_ATUAL )
+		mov	R5, R0
+		asl	R0			; R0 = 2*R5
+		clr 	CLKTM(R0)		; Zera Minutos   <=>   CLKTM[ R5 ][ 0 ] = 0   <=>  *(CLKTM + 2*R5 + 0 )   <=>   *(CLKTM + QTD_LINHAS*CLK_ATUAL + CAMPO_ATUAL )
 		
 		; Zerar Segundos
-		inc 	R5
-		clr 	CLKTM(R5)		; Zera Segundos  <=>   CLKTM[ R5 ][ 1 ] = 0   <=>  *(CLKTM + 2*R5 + 1 ) 
+		inc 	R0
+		clr 	CLKTM(R0)		; Zera Segundos  <=>   CLKTM[ R5 ][ 1 ] = 0   <=>  *(CLKTM + 2*R5 + 1 ) 
 		
 		
 		END_CLR_CLK:
@@ -481,12 +482,19 @@ ISRtec:
 					jmp	ISRtec_FIM
 
 
+; Tratamento das interrupções provacadas pelo timer
+;
+; Descrição: O timer invoca a interrupção a cada 100 ms
+;
+; Ação: Incrementa os décimos de segundos dos relógios com
+; status de ativação ligado.
 ISRtim:
 		clr	 clk_atual			; Relógio(clk) atual = 0
 		clr	 flag_redesenho			; flag_redesenho = false
 
 
 		ATUALIZA_TEMPO_CLKS:													; do{
+			; Checa Status de Ativação do Relógio
 			;mov 		#0, R5
 			;jsr		R7, _get_clock_status
 			;and 		#2 , R5
@@ -494,20 +502,22 @@ ISRtim:
 			;beq 		RELOGIO_1_2
 			
 			; Seleção do Relógio
-			mov 		clk_atual, R5			
-			asl		R5				; R5 = 2 * Código do Relógio Escolhido( o->clk0 ou 1-> clk1)
+			mov 	clk_atual, R5			
+			
 			
 			; Décimos de Segundos
-			inc		CLKTM_DS(R5)			;| 
-			cmp 		CLKTM_DS(R5) , #10		;|
-			bne		SET_PROX_RELOGIO		;|
-			clr 		CLKTM_DS(R5)			;|> Atualiza valor dos décimos de segundos do clk	
-			mov		TRUE, flag_redesenho
+			inc	CLKTM_DS(R5)			;| 
+			cmp 	CLKTM_DS(R5), #10		;|
+			blt	SET_PROX_RELOGIO		;|
+			clr 	CLKTM_DS(R5)			;|> Atualiza valor dos décimos de segundos do clk	
+			
+			mov	TRUE, flag_redesenho		; Ativa redesenho
 			
 			; Segundos			
+			asl		R5				; R5 = 2 * Código do Relógio Escolhido( o->clk0 ou 1-> clk1 )
 			inc		R5				; R5 ++; Define Campo Atual como Segundos
 			
-			inc		CLKTM(R5)			;|
+			inc		CLKTM(R5)			;| *(CLKTM + clk_atual * 2 + 1 ) += 1
 			cmp 		CLKTM(R5), #60			;|
 			bne 		SET_PROX_RELOGIO		;|
 			clr 		CLKTM(R5)			;|> Atualiza valor dos segundos do clk 
@@ -515,7 +525,7 @@ ISRtim:
 			; Minutos
 			dec		R5				; R5 --; Define Campo Atual como Minutos
 
-			inc		CLKTM(R5)			;|	
+			inc		CLKTM(R5)			;| *(CLKTM + clk_atual * 2 + 0 ) += 1	
 			cmp 		CLKTM(R5), #60			;|
 			bne 		SET_PROX_RELOGIO		;|
 			clr 		CLKTM(R5)			;|> Atualiza valor dos minutos do clk
@@ -524,8 +534,8 @@ ISRtim:
 			SET_PROX_RELOGIO:
 					inc 		clk_atual		; clk_atual++
 					cmp		clk_atual, #2
-					bge		FIM_ISRtim									; }while( !( clk_atual >= 2 ) );    <= >    }while( !( clk_atual < 2 ) )
-					jmp		ATUALIZA_TEMPO_CLkS
+					bne		ATUALIZA_TEMPO_CLkS
+					jmp		REDESENHA_CLK									; }while( !( clk_atual >= 2 ) );    <=>    }while( clk_atual < 2 );
 			
 		; Se necessário redesenha os relógios		
 		REDESENHA_CLK:
@@ -600,88 +610,104 @@ mintoseg:
 ; - Parâmetros de entrada: nenhum
 ;				
 ; - Parâmetro de saída:  nenhum
-;	
+;
+; - Funções dos Registradores na Sub-rotina
+;	* R0: Auxiliar
+;	* R1: Parâmetros de subrotinas de divisão
+;	* R2: Parâmetros de subrotinas de multiplicação e divisão
+;	* R3: Posição No Display Para Escrita 
+;	* R4: Código do Relógio Atual	
 ;------------------------------------------------------------------------------
 redesenha_clks:
-        	clr	clk_atual_2	; Clock_Atual = 0
-
+        	; Inicialização
+		clr	clk_atual_2	; Clock_Atual = 0
+		
+		mov	R0, -(R6)	;|		
+		mov	R1, -(R6)	;|		
+		mov	R2, -(R6)	;|		
+		mov	R3, -(R6)	;|		
+		mov	R4, -(R6)	;|
+		mov	R5, -(R6)	;|> Arquivamento de registradores
+		
 		DESENHA_CLKS:	
-				mov	clk_atual_2, R0
-				mov	CLKST(R0), R0
-				and	#1, R0
-				beq	LMP_RL0
-				
-				; Desenhar sinal de  Dois pontos
-				mov 	#26, R3 
-				mov	#':', VISOR(R3)	; Desenha Dois pontos   <=>  VISOR[26] = ':';
-				
-				; Tempo - Primeiro Segundos, depois Minutos
-				mov	#0, R0
-				mov 	CLKTM_S(R0), R1
-				jsr	R7, divd_int_10
-				mov 	#27, R3
-				add	#48, R2 
-				mov	R2, VISOR(R3)	; Dezenas dos segundos
-				
-				sub	#48, R2
-				jsr	R7, multp_int_10
-				sub	R2, R1
-				
-				mov 	#28, R3
-				add	#48, R1 
-				mov	R1, VISOR(R3)	; Unidades dos segundos   
-				 	
-				RELOGIO1_PRT:
-				mov	#1, R0
-				mov	CLKST(R0), R0
-				and	#1, R0
-				beq	LMP_RL1
-				
-				mov 	#33, R3 
-				mov	#':', VISOR(R3)	; Dois pontos   
+				LOOP_DESENHO:
+					; Set Relógio Atual
+					mov	clk_atual_2, R4
 
-				;mov	#0, R5
-				;jsr	R7, _get_clock_time
-				;mov 	R0, R1
-				;jsr	R7, divd_int_10
-				mov 	#34, R3
+					; Checagem de Status de Visibilidade do Relógio
+					mov	CLKST(R4), R0
+					and	#1, R0
+					beq	LMP_DISPLAY_CLK
+					
+					; Desenhar sinal de  Dois pontos
+					asl	R4			; R4 *= 2
+					mov 	pos_display(R4), R3
+					add	#2, R3 
+					mov	#':', VISOR(R3)		; Desenha Dois pontos   <=>  VISOR[R3] = ':'
 
-				;;mov	R2, VISOR(R3)	; Dezenas dos segundos
-				mov 	#'S', VISOR(R3)
-
-				;jsr	R7, multp_int_10
-				;sub	R1, R2
 				
-				mov 	#35, R3 
-				;;mov	R2, VISOR(R3)	; Unidades dos segundos   
-				mov 	#'s', VISOR(R3)
-	
+					; Tempo - Primeiro Segundos, depois Minutos
+					UNIDADES:
+						mov	#1, R5
+						inc 	R3			
+						jmp	UNIDADES_DEZENAS
+					DEZENAS:
+						mov	#0, R5
+						mov 	pos_display(R4), R3
+
+					UNIDADES_DEZENAS:
+						mov	clk_atual_2, R0		;|
+						asl	R0			;|
+						add	R5, R0			;|
+						mov 	CLKTM(R0), R1		;|> R1 = CLKTM[ clk_atual_2 ][R5]
+		
+						jsr	R7, divd_int_10		;|
+						add	#48, R2 		;|
+						mov	R2, VISOR(R3)		;|> Dezenas
+				
+						sub	#48, R2			;|
+						jsr	R7, multp_int_10	;|
+						sub	R2, R1			;|
+										;|		
+						inc 	R3			;|
+						add	#48, R1 		;|
+						mov	R1, VISOR(R3)		;|> Unidades
+
+						tst	R5			;|
+						bne	DEZENAS			;|if( R5 ) goto DEZENAS;
+					
+					INC_CLK_ATUAL:
+						inc	clk_atual_2
+						cmp	clk_atual_2, #2
+						bne     LOOP_DESENHO
+
+		
 			FIM_redesenha_clks:
+				mov	(R6)+, R5		;|		
+				mov	(R6)+, R4		;|		
+				mov	(R6)+, R3		;|		
+				mov	(R6)+, R2		;|		
+				mov	(R6)+, R1		;|		
+				mov	(R6)+, R0		;|> Restauração de registradores
+				
 				rts	r7
 	
 			
-			LMP_RL0:
-				mov 	#22,R0
-				
-				DESENHA_ESP_0:	
-					mov 	#' ',VISOR(R0) 
-					inc	R0
-					cmp 	R0, #29
-					bne	DESENHA_ESP_0
-				jmp RELOGIO1_PRT			
-			
-			LMP_RL1:
-				mov 	#29,R0
-				
-				DESENHA_ESP_1:	
-					mov 	#' ',VISOR(R0) 
-					inc	R0
-					cmp 	R0, #36
-					bne	DESENHA_ESP_1
-				jmp FIM_redesenha_clks
+			LMP_DISPLAY_CLK:
+				asl	R4
+				mov 	pos_display(R4), R3
+				add	#5, R3
+		
+				DRAW_SPACES_CLK:	
+					dec	R3
+					mov 	#' ',VISOR(R3) 
+					cmp     R3, pos_display(R4)
+					bne	DRAW_SPACES_CLK
+				jmp INC_CLK_ATUAL			
 		
 		; Variáveis Locais
 		clk_atual_2:	dw		; Indicador do clock atual
+		pos_display:	daw	24,31	; Posição no display do início dos relógios 0 e 1 respectivamente
 ;		
 ;-----------------------------------------------------------------------------
 ; Divisão inteira por 10
@@ -753,33 +779,19 @@ TRUE:		dw		#1
 
 org _APP
 	nop
-	nop
-	nop
-	;inc	R4
-	;jsr	R7, _kbhit
 	mov	#1, R4
 	mov	#0, R5
 	jsr	R7, _turnon_clock
-
-
+	mov	#1, R4
+	mov	#1, R5
+	jsr	R7, _turnon_clock
 	
-	mov 	#0, R3
-	sub	#1, R3
-	mov 	#77, R4
-	LOOP:
-		inc	R3
-		cmp	R3, #3
-		beq	LOOP_2
 
-		mov 	R4,VISOR(R3)
-		inc	R4
-				
-		jmp 	LOOP
-	
+	mov	#3, R5
 	LOOP_2:
-		mov	#40, R1
-		jsr	R7, divd_int_10
-		mov	R2, 37150
-		jmp 	LOOP_2
+		nop
+		mov	CLKTM(R5), R4
+		cmp 	R4, #7
+		bne 	LOOP_2
 	FIM_APP:
 		hlt
