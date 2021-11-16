@@ -110,8 +110,10 @@ _RESET:
 	;mov 	#3 , INTE			; Liga bits de destravamento das interrupções do teclado e do timmer
 	
 	clr 	TECST				; Inicializar Teclado
+	clr	BUFFER
 
 	mov 	#100, TIMDT			; Inicializar Timer
+		
 	
 	;jsr 	R7 , limpa_visor		; Limpar Visor
 	mov	#0 , POS_CURSOR			; Posiciona o cursor no primeiro bloco do display
@@ -772,26 +774,13 @@ multp_int_10:
 ; ########## VARIÁVEIS DO KERNEL  ##############  ( Localizadas após funções)
 ;-----------------------------------------------------------------------------
 POS_CURSOR: 	dw 		#0			; Posição do cursor
-CR: 		dw		#h0D			; Carriage Return Char
-BS: 		dw		#h08			; BackSpace Char 
+BUFFER:		dw		#0			; Buffer Teclado
+CR: 		dw		h0D			; Carriage Return Char
+BS: 		dw		h08			; BackSpace Char 
 FALSE:		dw		#0			
 TRUE:		dw		#1			
 
 org _APP
 	nop
-	mov	#1, R4
-	mov	#0, R5
-	jsr	R7, _turnon_clock
-	mov	#1, R4
-	mov	#1, R5
-	jsr	R7, _turnon_clock
-	
-
-	mov	#3, R5
-	LOOP_2:
-		nop
-		mov	CLKTM(R5), R4
-		cmp 	R4, #7
-		bne 	LOOP_2
-	FIM_APP:
-		hlt
+	nop
+	jmp	_APP
