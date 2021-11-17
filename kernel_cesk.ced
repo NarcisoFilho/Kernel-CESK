@@ -107,26 +107,26 @@ _RESET:
 	
 	mov 	#Isr, IVET			; Define vetor de interrupções		
 	
-	;mov 	#3 , INTE			; Liga bits de destravamento das interrupções do teclado e do timmer
-	
-	clr 	TECST				; Inicializar Teclado
-	clr	BUFFER
+	clr 	TECST				;|
+	clr 	TECDT				;|
+	clr	BUFFER				;|> Inicializa Teclado
 
 	mov 	#100, TIMDT			; Inicializar Timer
 		
 	
-	;jsr 	R7 , limpa_visor		; Limpar Visor
+	jsr 	R7 , limpa_visor		; Limpar Visor
 	mov	#0 , POS_CURSOR			; Posiciona o cursor no primeiro bloco do display
 	
 	
-	mov	#0, R5
-	jsr	R7, _clr_clock
-	mov 	#1, R5
-	jsr	R7, _clr_clock			; Inicializa variáveis do relógio
-	mov	#3, CLKST
+	mov	#0, R5				;|
+	clr	CLKST(R5)			;|
+	jsr	R7, _clr_clock			;|
+	mov 	#1, R5				;|
+	clr	CLKST(R5)			;|
+	jsr	R7, _clr_clock			;|> Inicializa variáveis do relógio
 	
-	;or	#h80, INTE			; Habilita Interrupções	
-	mov	#h83, INTE
+			
+	mov	#h83, INTE			; Habilita Interrupções	
 	
 	jmp	_APP
 
@@ -141,7 +141,7 @@ _RESET:
 ; - Se não há tecla, o valor em R0 será um valor qualquer diferente de zero. 
 ;------------------------------------------------------------------------------
 _kbhit:
-		tst 	TECST
+		tst 	BUFFER
 		beq 	continua_kbhit_0
 		
 		mov #1, R0	; Não há tecla sendo pressionada
@@ -168,12 +168,12 @@ _kbhit:
 ; Essa alternância deve ter uma periodicidade tal que cada símbolo permaneça no visor por 500ms. 
 ;------------------------------------------------------------------------------
 _getchar:
-		tst		TECST
-		beq		_getchar		; while( !houve_tecla_digitada ){/* POR ENQUANTO, nada a fazer( CURSOR DEVERÁ PISCAR ) */}
+		tst	BUFFER
+		beq	_getchar		; while( !houve_tecla_digitada ){/* POR ENQUANTO, nada a fazer( CURSOR DEVERÁ PISCAR ) */}
 		
-		mov 		TECDT, R0
-		clr 		TECST
-		rts		r7
+		mov 	BUFFER, R0
+		clr	BUFFER	
+		rts	R7
 		
 ;		
 ;------------------------------------------------------------------------------
@@ -199,46 +199,45 @@ _putchar:
 		cmp	POS_CURSOR, #0	
 		blt	PUTCHAR_ERROR_CD
 		
-		mov	#VISOR, R0	
-		mov	R5, POS_CURSOR(R0)	; Escreve na tela
-		
-	
-		mov 	#0 , R0					
+		mov	POS_CURSOR, R0	
+		mov	R5, VISOR(R0)	; Escreve na tela
+						
 		cmp 	POS_CURSOR, #21
 		beq 	FIM_PUTCHAR					;return 0
 		
 		INC_CURSOR:
-				inc 	POS_CURSOR		; POS_CURSOR++
+				inc 	POS_CURSOR			; POS_CURSOR++
 				jmp 	FIM_PUTCHAR			; return 0
 		
 		PUTCHAR_ERROR_EI:
 				mov 	#1 , R0
-				jmp FIM_PUTCHAR			; return 1
+				jmp 	FIM_PUTCHAR			; return 1
 				
 		PUTCHAR_ERROR_CD:
 				mov 	#2 , R0
-				jmp FIM_PUTCHAR			; return 2
+				jmp 	FIM_PUTCHAR			; return 2
 
 		PUTCHAR_CR:
-				mov #0, R0
-				clr POS_CURSOR
+				mov 	#0, R0
+				clr 	POS_CURSOR
 
-				jmp FIM_PUTCHAR				; return 0
+				jmp 	FIM_PUTCHAR				; return 0
 		PUTCHAR_BS:
-				mov #0, R0
+				mov 	#0, R0
 				
-				tst POS_CURSOR
-				beq FIM_PUTCHAR			; return 0
-
-				dec POS_CURSOR			; POS_CURSOR --
+				tst 	POS_CURSOR
+				beq 	FIM_PUTCHAR			; return 0
 				
-				mov #VISOR, R0			; 
-				clr POS_CURSOR(R0)		; VISOR[ POS_CURSOR ] = 0
+				mov	#VISOR, R0			; 
+				clr 	POS_CURSOR(R0)		; VISOR[ POS_CURSOR ] = 0
 
-				jmp FIM_PUTCHAR				; return 0
+				dec 	POS_CURSOR			; POS_CURSOR --
+
+				jmp 	FIM_PUTCHAR				; return 0
 		
 		FIM_PUTCHAR:
-				rts	r7
+				mov	#0, R0
+				rts	R7
 		
 		
 ;		
@@ -255,19 +254,19 @@ _putchar:
 ;------------------------------------------------------------------------------
 _get_clock_status:
 	; Checa se relógio existe
-		cmp R5, 0
-		blt RELOGIO_INEXISTENTE		
-		cmp R5, 1 
-		bgt RELOGIO_INEXISTENTE		
+	cmp 	R5, #0
+	blt 	RELOGIO_INEXISTENTE		
+	cmp 	R5, #1 
+	bgt 	RELOGIO_INEXISTENTE		
 	
 	; Retorno normal ( em caso de relógio existente: R5 == 0 v R5 == 1 )	
-		mov 	CLKST(R5), R0
-		rts 	r7			; return CLKST[ R5 ]
+	mov 	CLKST(R5), R0
+	rts 	R7			; return CLKST[ R5 ]
 	
 	; Retorno anômalo ( em caso de relógio inexistente: R5 != 0 ^ R5 != 1 )	
-		RELOGIO_INEXISTENTE:		
-				mov #0, R0
-				rts		r7
+	RELOGIO_INEXISTENTE:		
+			mov 	#0, R0
+			rts	R7
 	
 ;		
 ;------------------------------------------------------------------------------
@@ -339,11 +338,11 @@ _turnon_clock:
 
 		
 		PAUSAR_CLK:
-				and 	#hFFFD, CLKST(R4)		; Aplica máscara para desligar bit 1 { SA }
+				and 	#hFD, CLKST(R5)	; Aplica máscara para desligar bit 1 { SA }
 				jmp	END_TURNONCLK
 		REATIVAR_CLK:
-				or 	#2, CLKST(R4)		; Aplica máscara para ligar bit 1 { SA }
-		
+				or 	#2, CLKST(R5)		; Aplica máscara para ligar bit 1 { SA }
+	
 		END_TURNONCLK:
 				mov 	#0, R0
 				rts	r7
@@ -392,6 +391,7 @@ _clr_clock:
  
 ;------------------------------------------------------------------------------
 Isr:		
+		and		#h7F, INTE	; Pausa interrupções  
 		
 		mov		r0,-(r6)	; Salva registradores
 		mov		r1,-(r6)
@@ -423,6 +423,7 @@ Isr:
 				mov		(r6)+,r2
 				mov		(r6)+,r1
 				mov		(r6)+,r0
+				or		#h80, INTE	; Reativa interrupções  
 		
 		FIM_ISR:
 			rti					; Return From Interrupt
@@ -437,8 +438,21 @@ ISRtec:
 		beq		TROCAR_VIS_0
 		cmp 		TECDT, #'.'
 		beq		TROCAR_VIS_1
-						
-		rts		R7
+		
+		cmp 		TECDT, CR
+		jmp		SALVA_NO_BUFFER
+		cmp 		TECDT, BS
+		jmp		SALVA_NO_BUFFER
+
+		cmp		TECDT, #h20
+		blt		ISRtec_FIM
+		cmp		TECDT, #h7A
+		bgt		ISRtec_FIM
+
+		; Se for um caractere permitido e não de controle salva no buffer
+		SALVA_NO_BUFFER:					
+		mov		TECDT, BUFFER
+		
 		ISRtec_FIM:
 			clr 	TECST
 			clr 	TECDT					
@@ -446,42 +460,20 @@ ISRtec:
 
 		TROCAR_VIS_0:	
 				mov 	#0, R0
-				mov	CLKST(R0), R0
-				and	#1, R0
-		
-				tst	R0
-				beq	AC_TROCAR_VIS_0
-		
-				mov 	#0, R0
-				and 	#hFE, CLKST(R0)
-		
-				jmp	ISRtec_FIM
-
-				AC_TROCAR_VIS_0:
-					mov 	#0, R0
-					or 	#1, CLKST(R0)
-			
-					jmp	ISRtec_FIM
-		
-	
+				jmp	TROCAR_VIS
 		TROCAR_VIS_1:
 				mov 	#1, R0
-				mov	CLKST(R0), R0
-				and	#1, R0
-		
-				tst	R0
-				beq	AC_TROCAR_VIS_1
-		
-				mov 	#1, R0
-				and 	#hFE, CLKST(R0)
-		
+
+		TROCAR_VIS:
+				mov	CLKST(R0), R1
+				not	R1
+				and	#1, R1
+			
+				and	#hFE, CLKST(R0)
+				add	R1, CLKST(R0) 
+
 				jmp	ISRtec_FIM
 
-				AC_TROCAR_VIS_1:
-					mov 	#1, R0
-					or 	#1, CLKST(R0)
-				
-					jmp	ISRtec_FIM
 
 
 ; Tratamento das interrupções provacadas pelo timer
@@ -492,17 +484,20 @@ ISRtec:
 ; status de ativação ligado.
 ISRtim:
 		clr	 clk_atual			; Relógio(clk) atual = 0
-		clr	 flag_redesenho			; flag_redesenho = false
+		;clr	 flag_redesenho			; flag_redesenho = false
+		mov	 #1, flag_redesenho
 
 
 		ATUALIZA_TEMPO_CLKS:													; do{
 			; Checa Status de Ativação do Relógio
-			;mov 		#0, R5
-			;jsr		R7, _get_clock_status
-			;and 		#2 , R5
-			
-			;beq 		RELOGIO_1_2
-			
+			mov 	clk_atual, R5			;|
+			jsr	R7, _get_clock_status		;|
+			and 	#2 , R0				;|
+			bne 	CONTINUA			;| 
+			mov	#1, flag_redesenho		;|
+			jmp 	SET_PROX_RELOGIO		;|> Checagem
+
+			CONTINUA:
 			; Seleção do Relógio
 			mov 	clk_atual, R5			
 			
@@ -562,14 +557,14 @@ limpa_visor:
 		mov 	R0 , -(R6)	; Salva R0
 		
 		
-		mov 	#VISOR , R0
+		mov 	#35 , R0
 		
 		continua_lv:
-			clr	(R0)
-			cmp	R0 , hFFFF
+			clr	VISOR(R0)
+			tst	R0
 			beq	ret_lv
 			
-			inc	R0
+			dec	R0
 			jmp	continua_lv
 
 		ret_lv:
@@ -773,14 +768,24 @@ multp_int_10:
 ;-----------------------------------------------------------------------------
 ; ########## VARIÁVEIS DO KERNEL  ##############  ( Localizadas após funções)
 ;-----------------------------------------------------------------------------
-POS_CURSOR: 	dw 		#0			; Posição do cursor
-BUFFER:		dw		#0			; Buffer Teclado
+POS_CURSOR: 	dw 		0			; Posição do cursor
+BUFFER:		dw		0			; Buffer Teclado
 CR: 		dw		h0D			; Carriage Return Char
 BS: 		dw		h08			; BackSpace Char 
-FALSE:		dw		#0			
-TRUE:		dw		#1			
+FALSE:		dw		0			
+TRUE:		dw		1			
 
 org _APP
 	nop
 	nop
-	jmp	_APP
+	mov	#'M', R5
+	jsr	R7, _putchar
+	mov	#'a', R5
+	jsr	R7, _putchar
+	mov	#1, R4
+	mov	#0, R5
+	jsr	R7, _turnon_clock
+	LOOP:
+		nop
+		nop
+		jmp	LOOP
