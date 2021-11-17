@@ -47,7 +47,9 @@ IVET:	dw		0			; Vetor de interrupção
 
 ; Acesso em 8 bits
 		org		_IOAREA08
-		dab		[15]
+		dab		[14]
+
+backup_char:	db	
 ; Clock Variables
 CLKST:		dab		[2]			; CLOCK STATUS: 	x x x x . x x SA SV ( SA {bit 1} -> Status de ativação , SV {bit0} -> Status de Visibilidade )
 CLKTM_DS:	dab		[2]			; CLOCK DÉCIMOS DE SEGUNDOS -> char CLKTM_DS[2] = { 0 };
@@ -78,9 +80,9 @@ VISOR:	dab		[36]		; Portas de acesso ao visor
 		dw		_getchar		;ok ( falta cursor piscar com underline ( ou underscore ): '_' 
 		dw		_putchar		;ok
 		dw		_get_clock_status	;ok
-		dw		_get_clock_time		;ok2
-		dw		_turnon_clock		;ok2
-		dw		_clr_clock		;ok2
+		dw		_get_clock_time		;ok (erro)
+		dw		_turnon_clock		;ok
+		dw		_clr_clock		;ok
 		
 ;	
 ;------------------------------------------------------------------------------
@@ -168,12 +170,27 @@ _kbhit:
 ; Essa alternância deve ter uma periodicidade tal que cada símbolo permaneça no visor por 500ms. 
 ;------------------------------------------------------------------------------
 _getchar:
+		mov	POS_CURSOR, R0
+		mov	VISOR(R0), backup_char
+
+		LOOP_GETCHAR:
 		tst	BUFFER
-		beq	_getchar		; while( !houve_tecla_digitada ){/* POR ENQUANTO, nada a fazer( CURSOR DEVERÁ PISCAR ) */}
+		bne	FIM_GETCHAR
 		
-		mov 	BUFFER, R0
-		clr	BUFFER	
-		rts	R7
+		cmp	flag_piscar_cursor, #5
+		bge	PUT_ORIG
+		mov	#'_', VISOR(R0)
+		jmp	LOOP_GETCHAR		; while( !houve_tecla_digitada ){ CURSOR FICA PISCANDO }
+		
+		PUT_ORIG:
+			mov	backup_char, VISOR(R0)
+			jmp	LOOP_GETCHAR		; while( !houve_tecla_digitada ){ CURSOR FICA PISCANDO }
+		
+		FIM_GETCHAR:
+			mov	backup_char, VISOR(R0)
+			mov 	BUFFER, R0
+			clr	BUFFER	
+			rts	R7
 		
 ;		
 ;------------------------------------------------------------------------------
@@ -192,7 +209,7 @@ _putchar:
 		beq	PUTCHAR_CR 		; if( in == '\n' ) goto PUTCHAR_CR
 
 		cmp 	R5, BS
-		beq	PUTCHAR_BS 		; ; if( in == '\n' ) goto PUTCHAR_BS	
+		beq	PUTCHAR_BS 		; ; if( in == '\b' ) goto PUTCHAR_BS	
 		
 		cmp	POS_CURSOR , #21
 		bgt	PUTCHAR_ERROR_CD	; Cursor FORA dos Limites do Visor para Texto
@@ -200,7 +217,8 @@ _putchar:
 		blt	PUTCHAR_ERROR_CD
 		
 		mov	POS_CURSOR, R0	
-		mov	R5, VISOR(R0)	; Escreve na tela
+		mov	R5, VISOR(R0)		; Escreve na tela
+		clr	flag_piscar_cursor
 						
 		cmp 	POS_CURSOR, #21
 		beq 	FIM_PUTCHAR					;return 0
@@ -211,35 +229,26 @@ _putchar:
 		
 		PUTCHAR_ERROR_EI:
 				mov 	#1 , R0
-				jmp 	FIM_PUTCHAR			; return 1
+				rts 	R7				; return 1
 				
 		PUTCHAR_ERROR_CD:
 				mov 	#2 , R0
-				jmp 	FIM_PUTCHAR			; return 2
+				rts 	R7				; return 2
 
 		PUTCHAR_CR:
-				mov 	#0, R0
 				clr 	POS_CURSOR
-
-				jmp 	FIM_PUTCHAR				; return 0
+				jmp 	FIM_PUTCHAR			; return 0
 		PUTCHAR_BS:
-				mov 	#0, R0
-				
+				mov	POS_CURSOR, R0			; 
+				clr 	VISOR(R0)			; VISOR[ POS_CURSOR ] = 0
+				clr	backup_char
 				tst 	POS_CURSOR
 				beq 	FIM_PUTCHAR			; return 0
-				
-				mov	#VISOR, R0			; 
-				clr 	POS_CURSOR(R0)		; VISOR[ POS_CURSOR ] = 0
 
 				dec 	POS_CURSOR			; POS_CURSOR --
-
-				jmp 	FIM_PUTCHAR				; return 0
-		
 		FIM_PUTCHAR:
 				mov	#0, R0
 				rts	R7
-		
-		
 ;		
 ;------------------------------------------------------------------------------
 ; Essa função fornece as informações relativas à situação atual de cada relógio, 
@@ -449,9 +458,9 @@ ISRtec:
 		cmp		TECDT, #h7A
 		bgt		ISRtec_FIM
 
-		; Se for um caractere permitido e não de controle salva no buffer
+		; Se for um caractere permitido salva no buffer
 		SALVA_NO_BUFFER:					
-		mov		TECDT, BUFFER
+			mov	TECDT, BUFFER
 		
 		ISRtec_FIM:
 			clr 	TECST
@@ -483,6 +492,14 @@ ISRtec:
 ; Ação: Incrementa os décimos de segundos dos relógios com
 ; status de ativação ligado.
 ISRtim:
+		; Controle de alternância do cursor
+		inc	flag_piscar_cursor
+		cmp	flag_piscar_cursor, #10
+		blt	CONTINUA_ISRtim
+		clr	flag_piscar_cursor
+		
+		CONTINUA_ISRtim:
+
 		clr	 clk_atual			; Relógio(clk) atual = 0
 		;clr	 flag_redesenho			; flag_redesenho = false
 		mov	 #1, flag_redesenho
@@ -774,6 +791,8 @@ CR: 		dw		h0D			; Carriage Return Char
 BS: 		dw		h08			; BackSpace Char 
 FALSE:		dw		0			
 TRUE:		dw		1			
+
+flag_piscar_cursor:	dw	#0			;
 
 org _APP
 	nop
