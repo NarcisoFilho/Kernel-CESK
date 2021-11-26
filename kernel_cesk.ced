@@ -49,7 +49,9 @@ IVET:	dw		0			; Vetor de interrupção
 		org		_IOAREA08
 		dab		[14]
 
+; Keyboar Variables
 backup_char:	db	
+
 ; Clock Variables
 CLKST:		dab		[2]			; CLOCK STATUS: 	x x x x . x x SA SV ( SA {bit 1} -> Status de ativação , SV {bit0} -> Status de Visibilidade )
 CLKTM_DS:	dab		[2]			; CLOCK DÉCIMOS DE SEGUNDOS -> char CLKTM_DS[2] = { 0 };
@@ -291,9 +293,9 @@ _get_clock_status:
 ;------------------------------------------------------------------------------
 _get_clock_time:
 		; Verifica se relógio existe
-		cmp 	R5, 0
+		cmp 	R5, #0
 		blt 	FIM_GETTIME_A
-		cmp 	R5, 1
+		cmp 	R5, #1
 		bgt	FIM_GETTIME_A
 
 		; Salva Registradores
@@ -302,24 +304,23 @@ _get_clock_time:
 		
 		; Minutos
 		asl	R5				;|
-		inc	R5				;|
-		mov 	CLKTM(R5), R1			;|> R1 = CLKTM[ CÓD_CLK ][1]     <=>   R1 = *(CLKTM + CÓD_CLK*2 + 1 )
+		mov 	CLKTM(R5), R1			;|> R1 = CLKTM[ CÓD_CLK ][1]     <=>   R1 = *(CLKTM + CÓD_CLK*2 + 0 )
 
 		jsr 	R7, mintoseg			; R0 = mintoseg( R1 )		 <=>   R0 = 60 * CLKTM[ CÓD_CLK ][1]
 		
 		; Segundos
-		dec	R5				;|
-		add 	CLKTM(R5), R0			;| R0 += CLKTM[ CÓD_CLK ][0] 	
-
+		inc	R5				;|
+		add 	CLKTM(R5), R0			;| R0 += CLKTM[ CÓD_CLK ][1] 	
+		jmp	FIM_GETTIME
 		
 
 		FIM_GETTIME_A:
 				clr	R0
 				rts	R7
 		FIM_GETTIME:		
-				mov 	(R6), R5		; Restaura registrador R5
-				mov 	(R6), R1		; Restaura registrador R1
-				rts	r7
+				mov 	(R6)+, R5		; Restaura registrador R5
+				mov 	(R6)+, R1		; Restaura registrador R1
+				rts	R7
 		
 ;		
 ;------------------------------------------------------------------------------
@@ -616,7 +617,7 @@ mintoseg:
 				add 	#60, R0
 				sob	 R1, SOMA_60
 						        
-			rts		r7
+			rts	R7
 
 ;		
 ;-----------------------------------------------------------------------------
